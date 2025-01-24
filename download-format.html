@@ -1,0 +1,159 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>SVG Converter</title>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
+    <script src="https://unpkg.com/pdf-lib@1.17.1/dist/pdf-lib.min.js"></script>
+  </head>
+  <body>
+    <h1>SVG to JPEG, PNG, ZIP, PDF, and SVG</h1>
+    <svg
+      id="svgElement"
+      xmlns="http://www.w3.org/2000/svg"
+      width="200"
+      height="200"
+    >
+      <rect width="200" height="200" fill="blue" />
+      <circle cx="100" cy="100" r="50" fill="red" />
+    </svg>
+    <br /><br />
+    <button id="downloadSvg">Download as SVG</button>
+    <button id="downloadJpeg">Download as JPEG</button>
+    <button id="downloadPng">Download as PNG</button>
+    <button id="downloadPdf">Download as PDF</button>
+    <button id="downloadZip">Download as ZIP</button>
+
+    <script>
+      document.addEventListener("DOMContentLoaded", () => {
+        const pdfLib = window["pdf-lib"]
+        if (!pdfLib) {
+          console.error("PDF-lib failed to load!")
+        } else {
+          console.log("PDF-lib loaded successfully:", pdfLib)
+        }
+      })
+
+      async function svgToImage(svgElement, format) {
+        const canvas = document.createElement("canvas")
+        const ctx = canvas.getContext("2d")
+        const svgData = new XMLSerializer().serializeToString(svgElement)
+        const svgBlob = new Blob([svgData], {
+          type: "image/svg+xml;charset=utf-8",
+        })
+        const url = URL.createObjectURL(svgBlob)
+
+        const img = new Image()
+        img.src = url
+
+        return new Promise((resolve) => {
+          img.onload = () => {
+            canvas.width = svgElement.width.baseVal.value
+            canvas.height = svgElement.height.baseVal.value
+            ctx.clearRect(0, 0, canvas.width, canvas.height)
+            ctx.drawImage(img, 0, 0)
+            URL.revokeObjectURL(url)
+
+            canvas.toBlob(
+              (blob) => {
+                resolve({ blob })
+              },
+              format === "jpeg" ? "image/jpeg" : "image/png"
+            )
+          }
+        })
+      }
+
+      async function svgToPdf(svgElement) {
+        const { PDFDocument } = PDFLib
+        const pdfDoc = await PDFDocument.create()
+        const page = pdfDoc.addPage([
+          svgElement.width.baseVal.value,
+          svgElement.height.baseVal.value,
+        ])
+
+        const { blob: pngBlob } = await svgToImage(svgElement, "png")
+        const pngArrayBuffer = await pngBlob.arrayBuffer() // Get the ArrayBuffer directly
+        const pngImage = await pdfDoc.embedPng(pngArrayBuffer)
+
+        page.drawImage(pngImage, {
+          x: 0,
+          y: 0,
+          width: svgElement.width.baseVal.value,
+          height: svgElement.height.baseVal.value,
+        })
+
+        const pdfBytes = await pdfDoc.save()
+        return new Blob([pdfBytes], { type: "application/pdf" })
+      }
+
+      async function createZip(svgElement) {
+        const zip = new JSZip()
+
+        const { blob: jpegBlob } = await svgToImage(svgElement, "jpeg")
+        const { blob: pngBlob } = await svgToImage(svgElement, "png")
+
+        const svgData = new XMLSerializer().serializeToString(svgElement)
+        const svgBlob = new Blob([svgData], {
+          type: "image/svg+xml;charset=utf-8",
+        })
+
+        zip.file("image.jpeg", jpegBlob)
+        zip.file("image.png", pngBlob)
+        zip.file("image.svg", svgBlob)
+
+        const zipBlob = await zip.generateAsync({ type: "blob" })
+        return zipBlob
+      }
+
+      function downloadBlob(blob, filename) {
+        const link = document.createElement("a")
+        link.href = URL.createObjectURL(blob)
+        link.download = filename
+        link.click()
+      }
+
+      document.getElementById("downloadSvg").addEventListener("click", () => {
+        const svgElement = document.getElementById("svgElement")
+        const svgData = new XMLSerializer().serializeToString(svgElement)
+        const svgBlob = new Blob([svgData], {
+          type: "image/svg+xml;charset=utf-8",
+        })
+        downloadBlob(svgBlob, "image.svg")
+      })
+
+      document
+        .getElementById("downloadJpeg")
+        .addEventListener("click", async () => {
+          const svgElement = document.getElementById("svgElement")
+          const { blob } = await svgToImage(svgElement, "jpeg")
+          downloadBlob(blob, "image.jpeg")
+        })
+
+      document
+        .getElementById("downloadPng")
+        .addEventListener("click", async () => {
+          const svgElement = document.getElementById("svgElement")
+          const { blob } = await svgToImage(svgElement, "png")
+          downloadBlob(blob, "image.png")
+        })
+
+      document
+        .getElementById("downloadPdf")
+        .addEventListener("click", async () => {
+          const svgElement = document.getElementById("svgElement")
+          const pdfBlob = await svgToPdf(svgElement)
+          downloadBlob(pdfBlob, "document.pdf")
+        })
+
+      document
+        .getElementById("downloadZip")
+        .addEventListener("click", async () => {
+          const svgElement = document.getElementById("svgElement")
+          const zipBlob = await createZip(svgElement)
+          downloadBlob(zipBlob, "files.zip")
+        })
+    </script>
+  </body>
+</html>
